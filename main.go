@@ -20,7 +20,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = gen.GenerateDynaGenFile(setting, "extDynaType.go")
+	err = gen.GenerateDynaGenFile(setting, setting.ExtendDynaType)
 	if err != nil {
 		fmt.Println("cread config error", err)
 		os.Exit(1)

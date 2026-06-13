@@ -13,5 +13,6 @@
     "payable": "expense"
   },
   "getDynaQueryFn": "getDynamicQuery",
-  "getDynaQueryTable": "getDynamicQueryTable"
+  "getDynaQueryTable": "getDynamicQueryTable",
+  "extendDynaType": "extDynamicType.go"
 }

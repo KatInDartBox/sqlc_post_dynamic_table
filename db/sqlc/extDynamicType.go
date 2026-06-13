@@ -29,15 +29,15 @@ type DynaConfig struct {
 
 var dynaOpt = DynaConfig{
 	DynaTable: map[string][]string{
+		"cash_credit": {"receivable", "payable"},
 		"cashflow":    {"income", "expense", "receivable", "payable"},
 		"cash_inex":   {"income", "expense"},
-		"cash_credit": {"receivable", "payable"},
 	},
 	RefTable: map[string]string{
-		"income":     "receivable",
-		"expense":    "payable",
 		"receivable": "income",
 		"payable":    "expense",
+		"income":     "receivable",
+		"expense":    "payable",
 	},
 	RefTableName: "ref_table",
 }

@@ -7,4 +7,5 @@ type Config struct {
 	RefTableName      string              `json:"refTableName"`
 	GetDynaQueryFn    string              `json:"getDynaQueryFn"`
 	GetDynaQueryTable string              `json:"getDynaQueryTable"`
+	ExtendDynaType    string              `json:"extendDynaType"`
 }

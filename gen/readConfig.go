@@ -24,6 +24,9 @@ func ReadConfig(configPath string) (*Config, error) {
 	if config.GetDynaQueryFn == "" {
 		config.GetDynaQueryFn = "getDynaQuery"
 	}
+	if config.ExtendDynaType == "" {
+		config.ExtendDynaType = "extDynaType.go"
+	}
 
 	return &config, nil
 }
