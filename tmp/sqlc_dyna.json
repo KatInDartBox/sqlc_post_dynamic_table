@@ -1,0 +1,17 @@
+{
+  "sqlPath": "/home/ubuntu/projects/go/src/sqlc_post_plugin/db/sqlc",
+  "dynaTable": {
+    "cashflow": ["income", "expense", "receivable", "payable"],
+    "cash_inex": ["income", "expense"],
+    "cash_credit": ["receivable", "payable"]
+  },
+  "refTableName": "ref_table",
+  "refTable": {
+    "income": "receivable",
+    "expense": "payable",
+    "receivable": "income",
+    "payable": "expense"
+  },
+  "getDynaQueryFn": "getDynamicQuery",
+  "getDynaQueryTable": "getDynamicQueryTable"
+}

@@ -1,0 +1,15 @@
+# local env files
+.env*.local
+/env
+/env/*
+/tmp/main
+/tmp/build-errors.log
+
+# temporary files
+
+# download test file
+/.autoNode/download
+
+/public/company/*/**
+/public/users/*/**
+
