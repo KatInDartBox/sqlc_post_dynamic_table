@@ -8,7 +8,7 @@ import (
 	"dynagen/gen"
 )
 
-func main() {
+func mainBackup() {
 	exePath, err := gen.ExePath()
 	if err != nil {
 		fmt.Println(err)
@@ -43,4 +43,29 @@ func main() {
 	}
 
 	fmt.Println("all sql file processed!")
+}
+
+func main() {
+	// Sample context parsed from your input configurations
+	allowTableGuard := []string{"cashflow", "to_cashflow"}
+	queryName := "addCashflowDyna"
+	const addCashflowDynaSQL = `
+  insert into cashflow(
+      id,name
+  )select id,name from to_cashflow as c
+  where c.id = $1
+  returning id
+`
+
+	generatedCode, err := gen.GenerateDynamicQueryBuilders(
+		queryName,
+		addCashflowDynaSQL,
+		allowTableGuard,
+	)
+	if err != nil {
+		fmt.Println("Error:")
+		return
+	}
+
+	fmt.Println(generatedCode)
 }
