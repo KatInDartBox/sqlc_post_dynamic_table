@@ -16,9 +16,9 @@ type AddCashflowTbGuard struct {
 }
 
 func getAddCashflowQuery(tb AddCashflowTbGuard) (string, error) {
-	if !cashflowGuard[tb.Cashflow] ||
-		!to_cashflowGuard[tb.ToCashflow] {
-		return "", errors.New(tb.Cashflow + ", " + tb.ToCashflow + " !not allow.")
+	if !to_cashflowGuard[tb.ToCashflow] ||
+		!cashflowGuard[tb.Cashflow] {
+		return "", errors.New(tb.ToCashflow + ", " + tb.Cashflow + " !not allow.")
 	}
 
 	return `
