@@ -3,16 +3,13 @@
   "dynaTable": {
     "cashflow": ["income", "expense", "receivable", "payable"],
     "cash_inex": ["income", "expense"],
-    "cash_credit": ["receivable", "payable"]
+    "cash_credit": ["receivable", "payable"],
+    "ref_cash": ["income", "expense", "receivable", "payable"],
+    "to_cashflow": ["income", "expense", "receivable", "payable"]
   },
-  "refTableName": "ref_table",
-  "refTable": {
-    "income": "receivable",
-    "expense": "payable",
-    "receivable": "income",
-    "payable": "expense"
-  },
-  "getDynaQueryFn": "getDynamicQuery",
-  "getDynaQueryTable": "getDynamicQueryTable",
-  "extendDynaType": "extDynamicType.go"
+  "name": {
+    "fileTypeName": "extDynamicType.go",
+    "guard": "guard",
+    "dynaTable": "dynamicTb"
+  }
 }

@@ -36,7 +36,14 @@ type Income struct {
 	Total     string        `json:"total"`
 }
 
-type RefTable struct {
+type RefCash struct {
+	ID        int64         `json:"id"`
+	Name      string        `json:"name"`
+	CreditRef sql.NullInt64 `json:"credit_ref"`
+	Total     string        `json:"total"`
+}
+
+type ToCashflow struct {
 	ID        int64         `json:"id"`
 	Name      string        `json:"name"`
 	CreditRef sql.NullInt64 `json:"credit_ref"`

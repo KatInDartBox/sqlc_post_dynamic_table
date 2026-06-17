@@ -10,50 +10,103 @@ import (
 	"errors"
 )
 
-const addCashflow = `-- name: AddCashflow :one
-  insert into cashflow(
-      id,name
-  )select id,name from cashflow as c
-  where c.id = $1
-  returning id
-`
-
-var dynaAddCashflow = map[string]string{}
-
-func init() {
-	dynaAddCashflow = getDynamicQuery(addCashflow)
+type AddCashflowTbGuard struct {
+	Cashflow   string
+	ToCashflow string
 }
 
-func (q *Queries) AddCashflow(ctx context.Context, dynaTable string, id int64) (int64, error) {
-	tb, found := dynaAddCashflow[dynaTable]
-	if !found {
-		return 0, errors.New("Table " + dynaTable + "! not found.")
+func getAddCashflowQuery(tb AddCashflowTbGuard) (string, error) {
+	if !cashflowGuard[tb.Cashflow] ||
+		!to_cashflowGuard[tb.ToCashflow] {
+		return "", errors.New(tb.Cashflow + ", " + tb.ToCashflow + " !not allow.")
 	}
 
-	row := q.db.QueryRowContext(ctx, tb, id)
-	err := row.Scan(&id)
-	return id, err
+	return `
+  insert into ` + tb.Cashflow + `(
+      id,name 
+  )select id,name from ` + tb.ToCashflow + ` as c
+  where c.id = $1
+  returning id as newID
+`, nil
 }
 
-const paidDelete = `-- name: PaidDelete :exec
+func (q *Queries) AddCashflow(ctx context.Context, dynaTable AddCashflowTbGuard, id int64) (int64, error) {
+	dynaQuery, errQuery := getAddCashflowQuery(dynaTable)
+	if errQuery != nil {
+		return 0, errQuery
+	}
+
+	row := q.db.QueryRowContext(ctx, dynaQuery, id)
+	var newid int64
+	err := row.Scan(&newid)
+	return newid, err
+}
+
+const authDeleteIncome = `-- name: AuthDeleteIncome :exec
+delete from income where 
+id = $1 and name = $2
+`
+
+type AuthDeleteIncomeParams struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+func (q *Queries) AuthDeleteIncome(ctx context.Context, arg AuthDeleteIncomeParams) error {
+	_, err := q.db.ExecContext(ctx, authDeleteIncome, arg.ID, arg.Name)
+	return err
+}
+
+type FlushCashflowTbGuard struct {
+	Cashflow string
+}
+
+func getFlushCashflowQuery(tb FlushCashflowTbGuard) (string, error) {
+	if !cashflowGuard[tb.Cashflow] {
+		return "", errors.New(tb.Cashflow + " !not allow.")
+	}
+
+	return `
+  delete from  ` + tb.Cashflow + `
+  where c.id = 123 
+`, nil
+}
+
+func (q *Queries) FlushCashflow(ctx context.Context, dynaTable FlushCashflowTbGuard) error {
+	dynaQuery, errQuery := getFlushCashflowQuery(dynaTable)
+	if errQuery != nil {
+		return errQuery
+	}
+
+	_, err := q.db.ExecContext(ctx, dynaQuery)
+	return err
+}
+
+type PaidDeleteTbGuard struct {
+	CashInex string
+	RefCash  string
+}
+
+func getPaidDeleteQuery(tb PaidDeleteTbGuard) (string, error) {
+	if !cash_inexGuard[tb.CashInex] ||
+		!ref_cashGuard[tb.RefCash] {
+		return "", errors.New(tb.CashInex + ", " + tb.RefCash + " !not allow.")
+	}
+
+	return `
 WITH cte_paid_delete as (
-  delete from cash_inex as cold
+  delete from ` + tb.CashInex + ` as cold
   WHERE 
     cold.id = $2
   returning cold.total
 )
-update ref_table as cnew set
+update ` + tb.RefCash + ` as cnew set
   total = total + cte_paid_delete.total,
   name = $1
 from cte_paid_delete 
 where 
   cnew.id = cte_paid_delete.credit_ref
-`
-
-var dynaPaidDelete = map[string]string{}
-
-func init() {
-	dynaPaidDelete = getDynamicQuery(paidDelete)
+`, nil
 }
 
 type PaidDeleteParams struct {
@@ -61,12 +114,12 @@ type PaidDeleteParams struct {
 	InExDocID int64  `json:"in_ex_doc_id"`
 }
 
-func (q *Queries) PaidDelete(ctx context.Context, dynaTable string, arg PaidDeleteParams) error {
-	tb, found := dynaPaidDelete[dynaTable]
-	if !found {
-		return errors.New("Table " + dynaTable + "! not found.")
+func (q *Queries) PaidDelete(ctx context.Context, dynaTable PaidDeleteTbGuard, arg PaidDeleteParams) error {
+	dynaQuery, errQuery := getPaidDeleteQuery(dynaTable)
+	if errQuery != nil {
+		return errQuery
 	}
 
-	_, err := q.db.ExecContext(ctx, tb, arg.Name, arg.InExDocID)
+	_, err := q.db.ExecContext(ctx, dynaQuery, arg.Name, arg.InExDocID)
 	return err
 }

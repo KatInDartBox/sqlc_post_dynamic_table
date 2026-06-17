@@ -10,16 +10,20 @@ import (
 	"errors"
 )
 
-const getCashCredit = `-- name: GetCashCredit :one
-select id, name, credit_ref, total from cash_credit
+type GetCashCreditTbGuard struct {
+	CashCredit string
+}
+
+func getGetCashCreditQuery(tb GetCashCreditTbGuard) (string, error) {
+	if !cash_creditGuard[tb.CashCredit] {
+		return "", errors.New(tb.CashCredit + " !not allow.")
+	}
+
+	return `
+select id, name, credit_ref, total from ` + tb.CashCredit + `
 where id = $1 and name = $2
 limit 1
-`
-
-var dynaGetCashCredit = map[string]string{}
-
-func init() {
-	dynaGetCashCredit = getDynamicQuery(getCashCredit)
+`, nil
 }
 
 type GetCashCreditParams struct {
@@ -27,13 +31,13 @@ type GetCashCreditParams struct {
 	Name string `json:"name"`
 }
 
-func (q *Queries) GetCashCredit(ctx context.Context, dynaTable string, arg GetCashCreditParams) (CashCredit, error) {
-	tb, found := dynaGetCashCredit[dynaTable]
-	if !found {
-		return CashCredit{}, errors.New("Table " + dynaTable + "! not found.")
+func (q *Queries) GetCashCredit(ctx context.Context, dynaTable GetCashCreditTbGuard, arg GetCashCreditParams) (CashCredit, error) {
+	dynaQuery, errQuery := getGetCashCreditQuery(dynaTable)
+	if errQuery != nil {
+		return CashCredit{}, errQuery
 	}
 
-	row := q.db.QueryRowContext(ctx, tb, arg.ID, arg.Name)
+	row := q.db.QueryRowContext(ctx, dynaQuery, arg.ID, arg.Name)
 	var i CashCredit
 	err := row.Scan(
 		&i.ID,

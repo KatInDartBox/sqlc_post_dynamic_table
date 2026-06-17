@@ -20,22 +20,15 @@ type funcCallSite struct {
 
 // dynaConst holds the analysed metadata for a matched constant.
 type dynaConst struct {
-	name     string   // constant identifier, e.g. "addCashflow"
-	value    string   // raw SQL string value
-	fnName   string   // function that uses this constant
-	objKey   string   // matched table key, e.g. "cashflow"
-	objValue []string // accepted values for that key
-	fn       funcCallSite
+	name                        string // constant identifier, e.g. "addCashflow"
+	value                       string // raw SQL string value
+	conDecl                     *ast.GenDecl
+	structTypeAndFnGetDynaQuery string
+	fn                          funcCallSite
 }
 
-type constInfo struct {
-	name    string
-	value   string
-	declEnd token.Pos // position just after the closing backtick / quote
-}
-
-func getAllConsts(file *ast.File) []constInfo {
-	var consts []constInfo
+func getAllConsts(file *ast.File, config *Config) []dynaConst {
+	var consts []dynaConst
 
 	for _, decl := range file.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
@@ -58,42 +51,35 @@ func getAllConsts(file *ast.File) []constInfo {
 				// strip surrounding backticks or quotes
 				raw := lit.Value
 				unquoted := raw[1 : len(raw)-1]
-				consts = append(consts, constInfo{
-					name:    name.Name,
-					value:   unquoted,
-					declEnd: genDecl.End(),
+				dynaQuery, err := GenerateTbStructTypeAndFnGetDynaQuery(name.Name, unquoted, config)
+				if err != nil || dynaQuery == "" {
+					continue
+				}
+
+				consts = append(consts, dynaConst{
+					name:                        name.Name,
+					value:                       unquoted,
+					conDecl:                     genDecl,
+					structTypeAndFnGetDynaQuery: dynaQuery,
 				})
 			}
 		}
 	}
+
 	return consts
 }
 
-func getFilterConsts(
+func getFilterConstsBySqlExecFn(
 	file *ast.File,
-	allConsts *[]constInfo,
-	dynaTableMap map[string][]string,
-) (filterConsts []dynaConst, constToCall map[string]funcCallSite) {
+	allConsts *[]dynaConst,
+) (filterConsts []dynaConst) {
 	var matched []dynaConst
 	matchedObj := map[string]dynaConst{}
 
 	// filter constance that contain dynatable keys
 	for _, c := range *allConsts {
-		lower := strings.ToLower(c.value)
-		for tableKey, tableVals := range dynaTableMap {
-			if strings.Contains(lower, tableKey) {
-				matchedObj[c.name] = dynaConst{
-					name:     c.name,
-					value:    c.value,
-					objKey:   tableKey,
-					objValue: tableVals,
-				}
-				break
-			}
-		}
+		matchedObj[c.name] = c
 	}
-
-	// constToCall = map[string]funcCallSite{} // key = const name
 
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
@@ -113,6 +99,7 @@ func getFilterConsts(
 				return true
 			}
 
+			// index is query constance name like addCashflow
 			ident, ok := call.Args[1].(*ast.Ident)
 			if !ok {
 				return true
@@ -120,34 +107,32 @@ func getFilterConsts(
 
 			used, usedFnArg := matchedObj[ident.Name]
 			if usedFnArg {
-				matched = append(matched, dynaConst{
-					name:  ident.Name,
-					value: used.value,
-					fn: funcCallSite{
-						fn:       fn,
-						callExpr: call,
-						constArg: 1,
-					},
-				})
+
+				used.fn = funcCallSite{
+					fn:       fn,
+					callExpr: call,
+					constArg: 1,
+				}
+
+				matched = append(matched, used)
+				// matched = append(matched, dynaConst{
+				// 	name:                        ident.Name,
+				// 	value:                       used.value,
+				// 	conDecl:                     used.conDecl,
+				// 	structTypeAndFnGetDynaQuery: used.structTypeAndFnGetDynaQuery,
+				// 	fn: funcCallSite{
+				// 		fn:       fn,
+				// 		callExpr: call,
+				// 		constArg: 1,
+				// 	},
+				// })
 			}
 
-			// for i := range matched {
-			// 	if ident.Name == matched[i].name {
-			// 		// (matched[i]).fnName = fn.Name.Name
-			// 		fnMatched := funcCallSite{
-			// 			fn:       fn,
-			// 			callExpr: call,
-			// 			constArg: 1,
-			// 		}
-			// 		constToCall[ident.Name] = fnMatched
-			// 		matched[i].fn = fnMatched
-			// 	}
-			// }
 			return true
 		})
 	}
 
-	return matched, constToCall
+	return matched
 }
 
 func getZeroLiteral(expr ast.Expr, fset *token.FileSet) string {
@@ -164,7 +149,7 @@ func getZeroLiteral(expr ast.Expr, fset *token.FileSet) string {
 		case "string":
 			return `""`
 		case "error":
-			return `errors.New("Table " + dynaTable + "! not found.")`
+			return `errQuery`
 		default:
 			// named type — assume struct, emit T{}
 			return t.Name + "{}"
@@ -206,25 +191,43 @@ func zeroValueOf(fn *ast.FuncDecl, fset *token.FileSet) []string {
 	return zeros
 }
 
-func HandleSql(sqlPath string, config *Config) error {
-	dynaTableMap := config.DynaTable
+func getTbGuardInsideSqlExeFn(zerosReturn []string, constName string) string {
+	guardQueryFn := getTbQueryFnName(constName)
+	returnStmt := strings.Join(zerosReturn, ", ")
+	temp := `
+	dynaQuery, errQuery := %s(dynaTable)
+	if errQuery != nil {
+		return %s
+	}
+`
+	guard := fmt.Sprintf(temp, guardQueryFn, returnStmt)
 
+	return guard
+}
+
+func HandleSql(sqlPath string, config *Config) error {
 	src, err := os.ReadFile(sqlPath)
 	if err != nil {
 		return fmt.Errorf("handleSql: read file : %w ", err)
 	}
 
 	fset := token.NewFileSet()
+
+	// helper: convert a token.Pos to a byte offset
+	offset := func(p token.Pos) int {
+		return fset.Position(p).Offset
+	}
+
 	file, err := parser.ParseFile(fset, sqlPath, src, parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("handleSql: parse: %w", err)
 	}
 
 	// ── 1. collect all string constants ──────────────────────────────────────
-	allConsts := getAllConsts(file)
+	allConsts := getAllConsts(file, config)
 
 	// ── 2. match constants against dynaTableMap ───────────────────────────────
-	matched, _ := getFilterConsts(file, &allConsts, dynaTableMap)
+	matched := getFilterConstsBySqlExecFn(file, &allConsts)
 
 	if len(matched) == 0 {
 		return nil // nothing to do
@@ -239,21 +242,12 @@ func HandleSql(sqlPath string, config *Config) error {
 
 	var edits []edit
 
-	// helper: convert a token.Pos to a byte offset
-	offset := func(p token.Pos) int {
-		return fset.Position(p).Offset
-	}
-
-	// 5a. For each matched function:
+	//  For each matched function:
 	//       - inject dynaTable parameter
 	//       - inject lookup guard at top of body
 	//       - replace constant arg with tb
 
 	for _, match := range matched {
-		// cs, ok := constToCall[match.name]
-		// if !ok {
-		// 	continue
-		// }
 
 		cs := match.fn
 		fn := cs.fn
@@ -270,15 +264,17 @@ func HandleSql(sqlPath string, config *Config) error {
 		edits = append(edits, edit{
 			pos:  firstParamEnd,
 			end:  firstParamEnd,
-			text: ", dynaTable string",
+			text: ", dynaTable " + guardTbStructName(match.name, config.Name.Guard),
 		})
+
+		// func getAddCashflowDynaQuery(tb AllowAddCashflowDynaParams ) (string, error) {
+		// guardQueryFn := getTbQueryFnName(match.name)
 
 		// ── inject lookup guard at top of function body ────────────────────
 		bodyOpen := offset(fn.Body.Lbrace) + 1 // just after '{'
 		zeros := zeroValueOf(fn, fset)
-		returnStmt := "return " + strings.Join(zeros, ", ")
-		guard := fmt.Sprintf("\n\ttb, found := dyna%s[dynaTable]\n\tif !found {\n\t\t%s\n\t}\n",
-			capitalize(match.name), returnStmt)
+		guard := getTbGuardInsideSqlExeFn(zeros, match.name)
+
 		edits = append(edits, edit{
 			pos:  bodyOpen,
 			end:  bodyOpen,
@@ -290,46 +286,25 @@ func HandleSql(sqlPath string, config *Config) error {
 		edits = append(edits, edit{
 			pos:  offset(constArg.Pos()),
 			end:  offset(constArg.End()),
-			text: "tb",
+			text: "dynaQuery",
 		})
 	}
 
-	// 5b. For each matched constant block, insert var + init() after it.
-	//     We need the end offset of the GenDecl that contains the constant.
-	constDeclEnd := map[string]int{} // const name → byte offset of GenDecl end
-	for _, decl := range file.Decls {
-		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok || genDecl.Tok != token.CONST {
-			continue
-		}
-		for _, spec := range genDecl.Specs {
-			vs, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			for _, name := range vs.Names {
-				constDeclEnd[name.Name] = offset(genDecl.End())
-			}
-		}
-	}
-
 	for _, m := range matched {
-		end, ok := constDeclEnd[m.name]
-		if !ok {
-			continue
-		}
-		capName := capitalize(m.name)
-		injection := fmt.Sprintf(
-			"\n\nvar dyna%s = map[string]string{}\n\nfunc init() {\n\tdyna%s = %s(%s)\n}\n",
-			capName,
-			capName,
-			config.GetDynaQueryFn,
-			m.name,
-		)
+		// append struct type and fn getDynaQuery
+		end := offset(m.conDecl.End())
+		injection := m.structTypeAndFnGetDynaQuery
 		edits = append(edits, edit{
 			pos:  end,
 			end:  end,
 			text: injection,
+		})
+
+		// delete used const
+		edits = append(edits, edit{
+			pos:  offset(m.conDecl.Pos()),
+			end:  end,
+			text: "",
 		})
 	}
 

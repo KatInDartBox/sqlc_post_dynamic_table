@@ -10,15 +10,19 @@ import (
 	"errors"
 )
 
-const getCashflow = `-- name: GetCashflow :many
-select id, name, credit_ref, total from cashflow 
+type GetCashflowTbGuard struct {
+	Cashflow string
+}
+
+func getGetCashflowQuery(tb GetCashflowTbGuard) (string, error) {
+	if !cashflowGuard[tb.Cashflow] {
+		return "", errors.New(tb.Cashflow + " !not allow.")
+	}
+
+	return `
+select id, name, credit_ref, total from ` + tb.Cashflow + ` 
 where id = $1 and name = $2
-`
-
-var dynaGetCashflow = map[string]string{}
-
-func init() {
-	dynaGetCashflow = getDynamicQuery(getCashflow)
+`, nil
 }
 
 type GetCashflowParams struct {
@@ -26,13 +30,13 @@ type GetCashflowParams struct {
 	Name string `json:"name"`
 }
 
-func (q *Queries) GetCashflow(ctx context.Context, dynaTable string, arg GetCashflowParams) ([]Cashflow, error) {
-	tb, found := dynaGetCashflow[dynaTable]
-	if !found {
-		return nil, errors.New("Table " + dynaTable + "! not found.")
+func (q *Queries) GetCashflow(ctx context.Context, dynaTable GetCashflowTbGuard, arg GetCashflowParams) ([]Cashflow, error) {
+	dynaQuery, errQuery := getGetCashflowQuery(dynaTable)
+	if errQuery != nil {
+		return nil, errQuery
 	}
 
-	rows, err := q.db.QueryContext(ctx, tb, arg.ID, arg.Name)
+	rows, err := q.db.QueryContext(ctx, dynaQuery, arg.ID, arg.Name)
 	if err != nil {
 		return nil, err
 	}

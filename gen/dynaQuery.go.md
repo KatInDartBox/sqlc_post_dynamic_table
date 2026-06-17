@@ -4,7 +4,7 @@ provided that we have a config.json like bellow
 
 ```json
 {
-  "allowTable": {
+  "dynaTable": {
     "cashflow": ["income", "expense", "receivable", "payable"],
     "to_cashflow": ["income", "expense", "receivable", "payable"]
   }
